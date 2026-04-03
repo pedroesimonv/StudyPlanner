@@ -1,14 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace StudyPlannerWinForms
+namespace StudyPlannerWinForms.Models; // Añadimos .Models y usamos el punto y coma
+
+public class SubjectActivity
 {
-   public class SubjectActivity
-    {
-        public string Title { get; set; } = "";
-        public DateTime? DueDate { get; set; }
-    }
+    public string Title { get; set; } = "";
+    public DateTime? DueDate { get; set; }
 }

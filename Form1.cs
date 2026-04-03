@@ -2,42 +2,65 @@
 using StudyPlannerWinForms.Services;
 using System.ComponentModel;
 
-//using static StudyPlannerWinForms.StudySession;
-
 namespace StudyPlannerWinForms;
 
 public partial class Form1 : Form
-
 {
-    public Form1()
+    // ========================================================================
+    // CAMPOS DE CLASE Y ESTADO DE LA APLICACIÓN
+    // ========================================================================
+    private readonly BindingSource _bsSubjects = new();
 
+    private readonly BindingSource _bsBlocks = new();
+    private readonly BindingSource _bsPlan = new();
+
+    private BindingList<Subject> _blSubjects = new();
+    private BindingList<TimeBlock> _blBlocks = new();
+    private BindingList<StudySession> _blPlan = new();
+
+    private readonly TextBox[] _actTitleBoxes;
+    private readonly DateTimePicker[] _actDatePickers;
+
+    private Guid? _editingSubjectId = null;
+    private AppData _data = new();
+
+    private readonly string _jsonPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        "StudyPlanner",
+        "data.json");
+
+    // ========================================================================
+    // CONSTRUCTOR
+    // ========================================================================
+    public Form1()
     {
         InitializeComponent();
+
+        // Inicialización única de los conjuntos de controles de la interfaz.
+        _actTitleBoxes = new TextBox[] { txtAct1, txtAct2, txtAct3, txtAct4, txtAct5 };
+        _actDatePickers = new DateTimePicker[] { dtpAct1, dtpAct2, dtpAct3, dtpAct4, dtpAct5 };
+
+        // Asegura la existencia del directorio de persistencia de datos.
         Directory.CreateDirectory(Path.GetDirectoryName(_jsonPath)!);
 
         SetupSummaryListView();
-        // Luego: SetupGrids(); (cuando conectemos dgv)
-
         SetupSubjectsGrid();
         BindSubjects();
         SetupBlocksGrid();
         BindBlocks();
         SetupPlanGrid();
         BindPlan();
+
         AutoLoadOnStartup();
+
+        // Suscripción a eventos del ciclo de vida del formulario y controles.
         this.FormClosing += Form1_FormClosing;
         chkHasExam.CheckedChanged += chkHasExam_CheckedChanged;
-
     }
 
-    private readonly BindingSource _bsSubjects = new();
-    private BindingList<Subject> _blSubjects = new();
-    private Guid? _editingSubjectId = null;
-    private readonly BindingSource _bsBlocks = new();
-    private BindingList<TimeBlock> _blBlocks = new();
-    private readonly BindingSource _bsPlan = new();
-    private BindingList<StudySession> _blPlan = new();
-
+    // ========================================================================
+    // CARGA Y PERSISTENCIA DE DATOS
+    // ========================================================================
     private void AutoLoadOnStartup()
     {
         _data = JsonStorage.Load(_jsonPath);
@@ -49,22 +72,42 @@ public partial class Form1 : Form
 
         toolStripStatusLabel1.Text = "Datos cargados automáticamente.";
     }
-    private void chkHasExam_CheckedChanged(object? sender, EventArgs e)
-    {
-        dtpSubExam.Enabled = chkHasExam.Checked;
-    }
-
 
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
     {
         JsonStorage.Save(_jsonPath, _data);
     }
 
+    private void Form1_Load(object sender, EventArgs e)
+    {
+    }
+
+    private void mnuSave_Click(object sender, EventArgs e)
+    {
+        JsonStorage.Save(_jsonPath, _data);
+        toolStripStatusLabel1.Text = "Datos guardados en JSON.";
+    }
+
+    private void mnuLoad_Click(object sender, EventArgs e)
+    {
+        _data = JsonStorage.Load(_jsonPath);
+
+        BindSubjects();
+        BindBlocks();
+        BindPlan();
+        RefreshPlanSummary();
+
+        toolStripStatusLabel1.Text = "Datos cargados desde JSON.";
+    }
+
+    // ========================================================================
+    // GESTIÓN DE ASIGNATURAS (SUBJECTS)
+    // ========================================================================
     private void SetupSubjectsGrid()
     {
         dgvSubjects.AutoGenerateColumns = false;
 
-        // IMPORTANTE: mapea tus columnas del diseñador con propiedades del modelo
+        // Configuración del mapeo de datos entre las columnas de la vista y el modelo.
         colSubName.DataPropertyName = nameof(Subject.Name);
         colSubCourse.DataPropertyName = nameof(Subject.Course);
         colSubPriority.DataPropertyName = nameof(Subject.Priority);
@@ -110,8 +153,7 @@ public partial class Form1 : Form
         txtSubTopic.Text = s.CurrentTopic;
         txtSubCheckpoint.Text = s.CurrentCheckpoint;
 
-
-        // ExamDate nullable -> checkbox + enabled
+        // Gestión del estado del selector de fecha evaluando la nulabilidad de la propiedad.
         if (s.ExamDate.HasValue)
         {
             chkHasExam.Checked = true;
@@ -122,188 +164,15 @@ public partial class Form1 : Form
         {
             chkHasExam.Checked = false;
             dtpSubExam.Enabled = false;
-            dtpSubExam.Value = DateTime.Today; // solo visual
+            dtpSubExam.Value = DateTime.Today;
         }
 
         numTargetDeep.Value = s.TargetDeepMinutes;
         numTargetLight.Value = s.TargetLightMinutes;
         numTargetAct.Value = s.TargetActivityMinutes;
         chkSubActive.Checked = s.Active;
+
         LoadActivitiesToEditor(s);
-
-    }
-
-    private void SetupSummaryListView()
-    {
-        lvSummary.View = View.Details;
-        lvSummary.FullRowSelect = true;
-        lvSummary.GridLines = true;
-        lvSummary.HideSelection = false;
-
-        lvSummary.Columns.Clear();
-        lvSummary.Columns.Add("Asignatura", 160);
-        lvSummary.Columns.Add("Objetivo (D/L/A)", 170);
-        lvSummary.Columns.Add("Planificado (D/L/A)", 190);
-    }
-
-    private static string FormatDla(int deep, int light, int act)
-    {
-        int total = deep + light + act;
-        return $"D:{deep} L:{light} A:{act} (T:{total})";
-    }
-
-    private static string FormatDue(DateTime due)
-    {
-        return due.ToString("dd/MM/yyyy");
-    }
-
-
-    private void RefreshPlanSummary()
-    {
-        lvSummary.Items.Clear();
-        lblWarnings.Text = "";
-
-        var activeSubjects = _data.Subjects.Where(s => s.Active).ToList();
-
-        // Minutos planificados agrupados por asignatura y por tipo
-        var minutesBySubject = _data.Plan
-            .GroupBy(p => p.SubjectId)
-            .ToDictionary(
-                g => g.Key,
-                g => new
-                {
-                    Deep = g.Where(x => x.Type == BlockType.Profundo).Sum(x => x.DurationMinutes),
-                    Light = g.Where(x => x.Type == BlockType.Ligero).Sum(x => x.DurationMinutes),
-                    Act = g.Where(x => x.Type == BlockType.Actividades).Sum(x => x.DurationMinutes),
-                });
-
-        var warnings = new List<string>();
-
-        foreach (var s in activeSubjects)
-        {
-            minutesBySubject.TryGetValue(s.Id, out var planned);
-
-            int pDeep = planned?.Deep ?? 0;
-            int pLight = planned?.Light ?? 0;
-            int pAct = planned?.Act ?? 0;
-
-            int tDeep = s.TargetDeepMinutes;
-            int tLight = s.TargetLightMinutes;
-            int tAct = s.TargetActivityMinutes;
-
-            var item = new ListViewItem(s.Name);
-            item.SubItems.Add(FormatDla(tDeep, tLight, tAct));
-            item.SubItems.Add(FormatDla(pDeep, pLight, pAct));
-            lvSummary.Items.Add(item);
-
-            // Avisos por tipo (solo si hay objetivo > 0)
-            if (tDeep > 0 && pDeep < tDeep)
-                warnings.Add($"Faltan {tDeep - pDeep} min PROFUNDO en {s.Name}");
-
-            if (tLight > 0 && pLight < tLight)
-                warnings.Add($"Faltan {tLight - pLight} min LIGERO en {s.Name}");
-
-            if (tAct > 0 && pAct < tAct)
-                warnings.Add($"Faltan {tAct - pAct} min ACTIVIDADES en {s.Name}");
-        }
-        // ===============================
-        // Avisos de ACTIVIDADES próximas
-        // ===============================
-        var today = DateTime.Today;
-        var limit = today.AddDays(7);
-
-        var upcoming = _data.Subjects
-            .Where(s => s.Active)
-            .SelectMany(s => s.Activities.Select(a => new { Subject = s, Act = a }))
-            .Where(x => !string.IsNullOrWhiteSpace(x.Act.Title))
-            .Where(x => x.Act.DueDate.HasValue)
-            .Select(x => new
-            {
-                x.Subject.Name,
-                Title = x.Act.Title.Trim(),
-                Due = x.Act.DueDate!.Value.Date
-            })
-            .Where(x => x.Due >= today && x.Due <= limit)
-            .OrderBy(x => x.Due)
-            .ThenBy(x => x.Name)
-            .ToList();
-
-        if (upcoming.Count > 0)
-        {
-            warnings.Add(""); // separador visual
-            warnings.Add("📌 Entregas próximas (7 días):");
-
-            foreach (var u in upcoming)
-            {
-                var daysLeft = (u.Due - today).Days;
-                var dText = daysLeft == 0 ? "HOY" : $"en {daysLeft} día(s)";
-                warnings.Add($"- {u.Name}: {u.Title} → {FormatDue(u.Due)} ({dText})");
-            }
-        }
-        var overdue = _data.Subjects
-    .Where(s => s.Active)
-    .SelectMany(s => s.Activities.Select(a => new { Subject = s, Act = a }))
-    .Where(x => !string.IsNullOrWhiteSpace(x.Act.Title))
-    .Where(x => x.Act.DueDate.HasValue)
-    .Select(x => new
-    {
-        x.Subject.Name,
-        Title = x.Act.Title.Trim(),
-        Due = x.Act.DueDate!.Value.Date
-    })
-    .Where(x => x.Due < today)
-    .OrderByDescending(x => x.Due)
-    .ThenBy(x => x.Name)
-    .ToList();
-
-        if (overdue.Count > 0)
-        {
-            warnings.Add("");
-            warnings.Add("⚠️ Entregas vencidas:");
-
-            foreach (var o in overdue)
-            {
-                var daysLate = (today - o.Due).Days;
-                warnings.Add($"- {o.Name}: {o.Title} → {FormatDue(o.Due)} (hace {daysLate} día(s))");
-            }
-        }
-
-
-
-        if (_data.Plan.Count == 0)
-            warnings.Insert(0, "No hay planning generado todavía.");
-
-        lblWarnings.Text = warnings.Count == 0 ? "Sin avisos." : string.Join(Environment.NewLine, warnings);
-    }
-
-    private AppData _data = new();
-
-    private string _jsonPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-        "StudyPlanner",
-        "data.json");
-
-    private void Form1_Load(object sender, EventArgs e)
-    {
-    }
-
-    private void mnuSave_Click(object sender, EventArgs e)
-    {
-        JsonStorage.Save(_jsonPath, _data);
-        toolStripStatusLabel1.Text = "Datos guardados en JSON.";
-    }
-
-    private void mnuLoad_Click(object sender, EventArgs e)
-    {
-        _data = JsonStorage.Load(_jsonPath);
-
-        BindSubjects();
-        BindBlocks();
-        BindPlan();
-
-        RefreshPlanSummary();
-
-        toolStripStatusLabel1.Text = "Datos cargados desde JSON.";
     }
 
     private void btnSubNew_Click(object sender, EventArgs e)
@@ -325,10 +194,10 @@ public partial class Form1 : Form
         cmbSubCourse.SelectedIndex = -1;
         numSubPriority.Value = 3;
 
-        // Examen nullable controlado por checkbox
+        // Restablecimiento del estado del examen.
         chkHasExam.Checked = false;
         dtpSubExam.Enabled = false;
-        dtpSubExam.Value = DateTime.Today; // valor visual, no se guardará si chkHasExam está false
+        dtpSubExam.Value = DateTime.Today;
 
         numTargetDeep.Value = 0;
         numTargetLight.Value = 0;
@@ -336,23 +205,20 @@ public partial class Form1 : Form
         chkSubActive.Checked = true;
         txtSubTopic.Clear();
         txtSubCheckpoint.Clear();
+
         ClearActivitiesEditor();
-
-
     }
-    private TextBox[] ActTitleBoxes() => new[] { txtAct1, txtAct2, txtAct3, txtAct4, txtAct5 };
-    private DateTimePicker[] ActDatePickers() => new[] { dtpAct1, dtpAct2, dtpAct3, dtpAct4, dtpAct5 };
 
     private void ClearActivitiesEditor()
     {
-        var titles = ActTitleBoxes();
-        var dates = ActDatePickers();
+        var titles = _actTitleBoxes;
+        var dates = _actDatePickers;
 
         for (int i = 0; i < 5; i++)
         {
             titles[i].Clear();
             dates[i].Value = DateTime.Today;
-            dates[i].Checked = false; // <- sin fecha
+            dates[i].Checked = false;
         }
     }
 
@@ -360,8 +226,8 @@ public partial class Form1 : Form
     {
         ClearActivitiesEditor();
 
-        var titles = ActTitleBoxes();
-        var dates = ActDatePickers();
+        var titles = _actTitleBoxes;
+        var dates = _actDatePickers;
 
         for (int i = 0; i < Math.Min(5, s.Activities.Count); i++)
         {
@@ -383,8 +249,8 @@ public partial class Form1 : Form
     private List<SubjectActivity> ReadActivitiesFromEditor()
     {
         var list = new List<SubjectActivity>();
-        var titles = ActTitleBoxes();
-        var dates = ActDatePickers();
+        var titles = _actTitleBoxes;
+        var dates = _actDatePickers;
 
         for (int i = 0; i < 5; i++)
         {
@@ -404,11 +270,14 @@ public partial class Form1 : Form
         return list;
     }
 
-
+    private void chkHasExam_CheckedChanged(object? sender, EventArgs e)
+    {
+        dtpSubExam.Enabled = chkHasExam.Checked;
+    }
 
     private void btnSubSave_Click(object sender, EventArgs e)
     {
-        // Validación mínima
+        // Verificación de integridad de los datos de entrada.
         var name = txtSubName.Text.Trim();
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -427,7 +296,7 @@ public partial class Form1 : Form
 
         if (existing == null)
         {
-            // Crear
+            // Instanciación de una nueva entidad Subject.
             var s = new Subject
             {
                 Id = Guid.NewGuid(),
@@ -442,19 +311,17 @@ public partial class Form1 : Form
                 CurrentTopic = txtSubTopic.Text.Trim(),
                 CurrentCheckpoint = txtSubCheckpoint.Text.Trim(),
                 Activities = ReadActivitiesFromEditor(),
-
-
             };
 
             _data.Subjects.Add(s);
-            _blSubjects.ResetBindings(); // refresca grid
+            _blSubjects.ResetBindings();
             _editingSubjectId = s.Id;
 
-            toolStripStatusLabel1.Text = "Asignatura creada.";
+            toolStripStatusLabel1.Text = "Asignatura creada exitosamente.";
         }
         else
         {
-            // Editar
+            // Modificación de la entidad Subject existente.
             existing.Name = name;
             existing.Course = cmbSubCourse.SelectedItem.ToString()!;
             existing.Priority = (int)numSubPriority.Value;
@@ -467,9 +334,8 @@ public partial class Form1 : Form
             existing.CurrentCheckpoint = txtSubCheckpoint.Text.Trim();
             existing.Activities = ReadActivitiesFromEditor();
 
-
             _blSubjects.ResetBindings();
-            toolStripStatusLabel1.Text = "Asignatura actualizada.";
+            toolStripStatusLabel1.Text = "Asignatura actualizada exitosamente.";
         }
     }
 
@@ -478,13 +344,13 @@ public partial class Form1 : Form
         var s = GetSelectedSubject();
         if (s == null)
         {
-            toolStripStatusLabel1.Text = "Selecciona una asignatura para eliminar.";
+            toolStripStatusLabel1.Text = "Debe seleccionar una asignatura para proceder con la eliminación.";
             return;
         }
 
         var ok = MessageBox.Show(
-            $"¿Eliminar '{s.Name}'?",
-            "Confirmar",
+            $"¿Está seguro de que desea eliminar la asignatura '{s.Name}'?",
+            "Confirmación de eliminación",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
 
@@ -495,14 +361,17 @@ public partial class Form1 : Form
         ClearSubjectEditor();
         _editingSubjectId = null;
 
-        toolStripStatusLabel1.Text = "Asignatura eliminada.";
+        toolStripStatusLabel1.Text = "Asignatura eliminada del sistema.";
     }
 
+    // ========================================================================
+    // GESTIÓN DE BLOQUES DE TIEMPO (TIME BLOCKS)
+    // ========================================================================
     private void SetupBlocksGrid()
     {
         dgvBlocks.AutoGenerateColumns = false;
 
-        // Como editas con diálogos, desactivamos edición directa en el grid
+        // Configuración de la cuadrícula para restringir la edición directa.
         dgvBlocks.ReadOnly = true;
         dgvBlocks.AllowUserToAddRows = false;
         dgvBlocks.AllowUserToDeleteRows = false;
@@ -513,14 +382,12 @@ public partial class Form1 : Form
         colBlockEnd.DataPropertyName = nameof(TimeBlock.End);
 
         dgvBlocks.CellFormatting += dgvBlocks_CellFormatting;
-
-        // Opcional: evita el popup por cualquier conversión rara
         dgvBlocks.DataError += dgvBlocks_DataError;
     }
 
     private void dgvBlocks_DataError(object sender, DataGridViewDataErrorEventArgs e)
     {
-        // Evita el cuadro de diálogo por defecto
+        // Intercepción y supresión de excepciones de formato generadas por el DataGridView.
         e.ThrowException = false;
     }
 
@@ -576,19 +443,18 @@ public partial class Form1 : Form
 
         if (b.End <= b.Start)
         {
-            message = "La hora de fin debe ser mayor que la hora de inicio.";
+            message = "Inconsistencia temporal: La hora de finalización debe ser posterior a la de inicio.";
             return false;
         }
         if (b.DurationMinutes < 15)
         {
-            message = "El hueco debe tener al menos 15 minutos.";
+            message = "La duración mínima permitida para un bloque de estudio es de 15 minutos.";
             return false;
         }
 
-        // No solapes el mismo día
+        // Algoritmo de validación de solapamiento temporal.
         foreach (var other in _data.TimeBlocks)
         {
-            // Si estamos editando, ignoramos el hueco original seleccionado
             if (editing != null && ReferenceEquals(other, editing)) continue;
 
             if (other.Date.Date != b.Date.Date) continue;
@@ -596,7 +462,7 @@ public partial class Form1 : Form
             bool overlap = b.Start < other.End && other.Start < b.End;
             if (overlap)
             {
-                message = "Este hueco se solapa con otro hueco del mismo día.";
+                message = "Se ha detectado un conflicto: Este bloque se solapa con otro registro existente en la misma fecha.";
                 return false;
             }
         }
@@ -618,7 +484,7 @@ public partial class Form1 : Form
         GenerateWeekBlocks(monday, shifts, dlg.ReplaceWeekBlocks);
 
         _blBlocks.ResetBindings();
-        toolStripStatusLabel1.Text = "Huecos de la semana generados.";
+        toolStripStatusLabel1.Text = "Generación de bloques semanales completada.";
     }
 
     private void btnBlockAdd_Click_1(object sender, EventArgs e)
@@ -633,14 +499,14 @@ public partial class Form1 : Form
 
         if (!IsBlockValid(block, editing: null, out var msg))
         {
-            MessageBox.Show(msg, "Hueco inválido", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(msg, "Error de validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         _data.TimeBlocks.Add(block);
         _blBlocks.ResetBindings();
 
-        toolStripStatusLabel1.Text = "Hueco añadido.";
+        toolStripStatusLabel1.Text = "Bloque de tiempo añadido correctamente.";
     }
 
     private void btnBlockEdit_Click(object sender, EventArgs e)
@@ -648,7 +514,7 @@ public partial class Form1 : Form
         var selected = GetSelectedBlock();
         if (selected == null)
         {
-            toolStripStatusLabel1.Text = "Selecciona un hueco para editar.";
+            toolStripStatusLabel1.Text = "Debe seleccionar un bloque para iniciar la edición.";
             return;
         }
 
@@ -662,7 +528,7 @@ public partial class Form1 : Form
 
         if (!IsBlockValid(edited, editing: selected, out var msg))
         {
-            MessageBox.Show(msg, "Hueco inválido", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(msg, "Error de validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -671,7 +537,7 @@ public partial class Form1 : Form
         selected.End = edited.End;
 
         _blBlocks.ResetBindings();
-        toolStripStatusLabel1.Text = "Hueco editado.";
+        toolStripStatusLabel1.Text = "Bloque de tiempo modificado correctamente.";
     }
 
     private void btnBlockRemove_Click(object sender, EventArgs e)
@@ -679,13 +545,13 @@ public partial class Form1 : Form
         var selected = GetSelectedBlock();
         if (selected == null)
         {
-            toolStripStatusLabel1.Text = "Selecciona un hueco para eliminar.";
+            toolStripStatusLabel1.Text = "Debe seleccionar un bloque para proceder con la eliminación.";
             return;
         }
 
         var ok = MessageBox.Show(
-            "¿Eliminar el hueco seleccionado?",
-            "Confirmar",
+            "¿Confirma la eliminación del bloque de tiempo seleccionado?",
+            "Confirmación",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
 
@@ -694,37 +560,107 @@ public partial class Form1 : Form
         _data.TimeBlocks.Remove(selected);
         _blBlocks.ResetBindings();
 
-        toolStripStatusLabel1.Text = "Hueco eliminado.";
+        toolStripStatusLabel1.Text = "Bloque de tiempo eliminado.";
     }
 
+    private static TimeSpan TS(int h, int m) => new TimeSpan(h, m, 0);
+
+    private static List<(TimeSpan start, TimeSpan end)> TemplateForShift(WeekAutoBlocksDialog.ShiftType shift)
+    {
+        // Diccionario de reglas de negocio que define los periodos de estudio recomendados
+        // según el patrón de turnos laborales del usuario.
+        return shift switch
+        {
+            WeekAutoBlocksDialog.ShiftType.Manana => new List<(TimeSpan, TimeSpan)>
+            {
+                (TS(16,00), TS(18,00)),
+                (TS(18,15), TS(20,00)),
+            },
+            WeekAutoBlocksDialog.ShiftType.Tarde => new List<(TimeSpan, TimeSpan)>
+            {
+                (TS(09,30), TS(11,30)),
+                (TS(11,35), TS(12,00)),
+            },
+            WeekAutoBlocksDialog.ShiftType.Libre0 => new List<(TimeSpan, TimeSpan)>(),
+            WeekAutoBlocksDialog.ShiftType.Libre1 => new List<(TimeSpan, TimeSpan)>
+            {
+                (TS(10,00), TS(12,00)),
+            },
+            WeekAutoBlocksDialog.ShiftType.Libre2 => new List<(TimeSpan, TimeSpan)>
+            {
+                (TS(10,00), TS(12,00)),
+                (TS(16,00), TS(18,00)),
+            },
+            _ => new List<(TimeSpan, TimeSpan)>()
+        };
+    }
+
+    private void GenerateWeekBlocks(DateTime monday, Dictionary<DayOfWeek, WeekAutoBlocksDialog.ShiftType> shifts, bool replaceWeek)
+    {
+        var weekStart = monday.Date;
+        var weekEndExclusive = weekStart.AddDays(7);
+
+        if (replaceWeek)
+        {
+            // Ejecución de borrado en cascada para la semana seleccionada.
+            _data.TimeBlocks.RemoveAll(b => b.Date.Date >= weekStart && b.Date.Date < weekEndExclusive);
+        }
+
+        for (int i = 0; i < 7; i++)
+        {
+            var day = weekStart.AddDays(i);
+            var shift = shifts[day.DayOfWeek];
+
+            var slots = TemplateForShift(shift);
+
+            foreach (var (start, end) in slots)
+            {
+                var block = new TimeBlock
+                {
+                    Date = day.Date,
+                    Start = start,
+                    End = end
+                };
+
+                // Omite inserciones que violen la restricción de solapamiento temporal.
+                if (!IsBlockValid(block, editing: null, out _))
+                    continue;
+
+                _data.TimeBlocks.Add(block);
+            }
+        }
+
+        // Ordenamiento cronológico de la colección.
+        _data.TimeBlocks.Sort((a, b) =>
+        {
+            int c = a.Date.Date.CompareTo(b.Date.Date);
+            if (c != 0) return c;
+            return a.Start.CompareTo(b.Start);
+        });
+    }
+
+    // ========================================================================
+    // RESUMEN Y PLANIFICACIÓN DE SESIONES (PLAN)
+    // ========================================================================
     private void SetupPlanGrid()
     {
         dgvPlan.AutoGenerateColumns = false;
-
-        // Como el planning se genera, no se edita directamente en el grid
         dgvPlan.ReadOnly = true;
         dgvPlan.AllowUserToAddRows = false;
         dgvPlan.AllowUserToDeleteRows = false;
         dgvPlan.EditMode = DataGridViewEditMode.EditProgrammatically;
 
-        // Mapeo de columnas del diseñador a propiedades del modelo
         colPlanDate.DataPropertyName = nameof(StudySession.Date);
         colPlanStart.DataPropertyName = nameof(StudySession.Start);
         colPlanEnd.DataPropertyName = nameof(StudySession.End);
-        colPlanSubject.DataPropertyName = nameof(StudySession.SubjectId); // se formatea a nombre en CellFormatting
+        colPlanSubject.DataPropertyName = nameof(StudySession.SubjectId);
         colPlanType.DataPropertyName = nameof(StudySession.Type);
         colPlanStrategy.DataPropertyName = nameof(StudySession.Strategy);
         colPlanNotes.DataPropertyName = nameof(StudySession.Notes);
 
-        // =========================
-        // MEJORAS DE AUTO-AJUSTE UI
-        // =========================
-
-        // Opción recomendada para que NO se disparen columnas por textos largos:
-        // - Todo rellena el ancho disponible de forma proporcional.
+        // Optimización del comportamiento de escalado y renderizado del Grid.
         dgvPlan.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
 
-        // Proporciones (ajusta si quieres)
         colPlanDate.FillWeight = 12;
         colPlanStart.FillWeight = 8;
         colPlanEnd.FillWeight = 8;
@@ -733,30 +669,161 @@ public partial class Form1 : Form
         colPlanStrategy.FillWeight = 25;
         colPlanNotes.FillWeight = 15;
 
-        // Filas: crecerán solo si hay texto envuelto (Strategy/Notes)
         dgvPlan.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
-
-        // Por defecto NO envolvemos (para que no crezcan todas las filas)
         dgvPlan.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
 
-        // Solo Strategy y Notes envuelven texto
         colPlanStrategy.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
         colPlanNotes.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
 
-        // Altura mínima razonable
         dgvPlan.RowTemplate.MinimumHeight = 22;
 
-        // Opcional: evita el cuadro de diálogo de error por conversiones/formateos
         dgvPlan.DataError += dgvPlan_DataError;
-
-        // Formateo visual (fecha/hora/subjectId->nombre)
         dgvPlan.CellFormatting += dgvPlan_CellFormatting;
-
         dgvPlan.SelectionChanged += dgvPlan_SelectionChanged;
-
     }
-    private StudySession? GetSelectedSession()
-    => dgvPlan.CurrentRow?.DataBoundItem as StudySession;
+
+    private void SetupSummaryListView()
+    {
+        lvSummary.View = View.Details;
+        lvSummary.FullRowSelect = true;
+        lvSummary.GridLines = true;
+        lvSummary.HideSelection = false;
+
+        lvSummary.Columns.Clear();
+        lvSummary.Columns.Add("Asignatura", 160);
+        lvSummary.Columns.Add("Objetivo (D/L/A)", 170);
+        lvSummary.Columns.Add("Planificado (D/L/A)", 190);
+    }
+
+    private static string FormatDla(int deep, int light, int act)
+    {
+        int total = deep + light + act;
+        return $"D:{deep} L:{light} A:{act} (T:{total})";
+    }
+
+    private static string FormatDue(DateTime due)
+    {
+        return due.ToString("dd/MM/yyyy");
+    }
+
+    private void RefreshPlanSummary()
+    {
+        lvSummary.Items.Clear();
+        lblWarnings.Text = "";
+
+        var activeSubjects = _data.Subjects.Where(s => s.Active).ToList();
+
+        // Agrupación mediante LINQ y proyección de datos para calcular los totales de planificación.
+        var minutesBySubject = _data.Plan
+            .GroupBy(p => p.SubjectId)
+            .ToDictionary(
+                g => g.Key,
+                g => new
+                {
+                    Deep = g.Where(x => x.Type == BlockType.Profundo).Sum(x => x.DurationMinutes),
+                    Light = g.Where(x => x.Type == BlockType.Ligero).Sum(x => x.DurationMinutes),
+                    Act = g.Where(x => x.Type == BlockType.Actividades).Sum(x => x.DurationMinutes),
+                });
+
+        var warnings = new List<string>();
+
+        // Evaluación de discrepancias entre objetivos establecidos y minutos planificados.
+        foreach (var s in activeSubjects)
+        {
+            minutesBySubject.TryGetValue(s.Id, out var planned);
+
+            int pDeep = planned?.Deep ?? 0;
+            int pLight = planned?.Light ?? 0;
+            int pAct = planned?.Act ?? 0;
+
+            int tDeep = s.TargetDeepMinutes;
+            int tLight = s.TargetLightMinutes;
+            int tAct = s.TargetActivityMinutes;
+
+            var item = new ListViewItem(s.Name);
+            item.SubItems.Add(FormatDla(tDeep, tLight, tAct));
+            item.SubItems.Add(FormatDla(pDeep, pLight, pAct));
+            lvSummary.Items.Add(item);
+
+            if (tDeep > 0 && pDeep < tDeep)
+                warnings.Add($"Faltan {tDeep - pDeep} min PROFUNDO en {s.Name}");
+
+            if (tLight > 0 && pLight < tLight)
+                warnings.Add($"Faltan {tLight - pLight} min LIGERO en {s.Name}");
+
+            if (tAct > 0 && pAct < tAct)
+                warnings.Add($"Faltan {tAct - pAct} min ACTIVIDADES en {s.Name}");
+        }
+
+        // Análisis predictivo de entregas inminentes (ventana de 7 días).
+        var today = DateTime.Today;
+        var limit = today.AddDays(7);
+
+        var upcoming = _data.Subjects
+            .Where(s => s.Active)
+            .SelectMany(s => s.Activities.Select(a => new { Subject = s, Act = a }))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Act.Title))
+            .Where(x => x.Act.DueDate.HasValue)
+            .Select(x => new
+            {
+                x.Subject.Name,
+                Title = x.Act.Title.Trim(),
+                Due = x.Act.DueDate!.Value.Date
+            })
+            .Where(x => x.Due >= today && x.Due <= limit)
+            .OrderBy(x => x.Due)
+            .ThenBy(x => x.Name)
+            .ToList();
+
+        if (upcoming.Count > 0)
+        {
+            warnings.Add("");
+            warnings.Add("📌 Entregas próximas (7 días):");
+
+            foreach (var u in upcoming)
+            {
+                var daysLeft = (u.Due - today).Days;
+                var dText = daysLeft == 0 ? "HOY" : $"en {daysLeft} día(s)";
+                warnings.Add($"- {u.Name}: {u.Title} → {FormatDue(u.Due)} ({dText})");
+            }
+        }
+
+        // Detección retrospectiva de entregas vencidas.
+        var overdue = _data.Subjects
+            .Where(s => s.Active)
+            .SelectMany(s => s.Activities.Select(a => new { Subject = s, Act = a }))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Act.Title))
+            .Where(x => x.Act.DueDate.HasValue)
+            .Select(x => new
+            {
+                x.Subject.Name,
+                Title = x.Act.Title.Trim(),
+                Due = x.Act.DueDate!.Value.Date
+            })
+            .Where(x => x.Due < today)
+            .OrderByDescending(x => x.Due)
+            .ThenBy(x => x.Name)
+            .ToList();
+
+        if (overdue.Count > 0)
+        {
+            warnings.Add("");
+            warnings.Add("⚠️ Entregas vencidas:");
+
+            foreach (var o in overdue)
+            {
+                var daysLate = (today - o.Due).Days;
+                warnings.Add($"- {o.Name}: {o.Title} → {FormatDue(o.Due)} (hace {daysLate} día(s))");
+            }
+        }
+
+        if (_data.Plan.Count == 0)
+            warnings.Insert(0, "El sistema no contiene registros de planificación generados.");
+
+        lblWarnings.Text = warnings.Count == 0 ? "Estado óptimo: Sin avisos reportados." : string.Join(Environment.NewLine, warnings);
+    }
+
+    private StudySession? GetSelectedSession() => dgvPlan.CurrentRow?.DataBoundItem as StudySession;
 
     private void dgvPlan_SelectionChanged(object? sender, EventArgs e)
     {
@@ -768,12 +835,10 @@ public partial class Form1 : Form
         chkPlanCompleted.Checked = s.Completed;
     }
 
-
     private void dgvPlan_DataError(object sender, DataGridViewDataErrorEventArgs e)
     {
         e.ThrowException = false;
     }
-
 
     private void BindPlan()
     {
@@ -807,467 +872,42 @@ public partial class Form1 : Form
         else if (colName == "colPlanSubject")
         {
             var sub = _data.Subjects.FirstOrDefault(x => x.Id == s.SubjectId);
-            e.Value = sub?.Name ?? "(Sin asignatura)";
+            e.Value = sub?.Name ?? "(Entidad huérfana / Sin asignatura)";
             e.FormattingApplied = true;
         }
     }
 
-    /*private void GeneratePlanV1()
-    {
-        // 1) Limpia plan anterior
-        _data.Plan.Clear();
-
-        // 2) Asignaturas activas
-        var subjects = _data.Subjects.Where(x => x.Active).ToList();
-        if (subjects.Count == 0)
-        {
-            MessageBox.Show("No hay asignaturas activas.", "Planning", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        // 3) Huecos disponibles ordenados por fecha/hora
-        var blocks = _data.TimeBlocks
-            .OrderBy(b => b.Date.Date)
-            .ThenBy(b => b.Start)
-            .ToList();
-
-        if (blocks.Count == 0)
-        {
-            MessageBox.Show("No hay huecos de estudio. Añade huecos en 'Semana y huecos'.", "Planning",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        // 4) Calcula "minutos pendientes" por asignatura
-        //    (total objetivo semanal = profundo + ligero + actividades)
-        var remaining = subjects.ToDictionary(
-            s => s.Id,
-            s => s.TargetDeepMinutes + s.TargetLightMinutes + s.TargetActivityMinutes
-        );
-
-        // Si una asignatura tiene 0 objetivo total, le damos un mínimo para que pueda recibir huecos
-        foreach (var id in remaining.Keys.ToList())
-            if (remaining[id] <= 0) remaining[id] = 30;
-
-        // 5) Asigna cada hueco a la asignatura con más minutos pendientes.
-        foreach (var b in blocks)
-        {
-            var chosen = remaining
-                .OrderByDescending(kv => kv.Value) // más pendiente primero
-                .Select(kv => kv.Key)
-                .First();
-
-            var duration = b.DurationMinutes;
-
-            // Tipo según duración
-            var type = duration >= 50 ? BlockType.Profundo : BlockType.Ligero;
-
-            var strategy = type == BlockType.Profundo
-                ? "Ejercicios + corrección"
-                : "Flashcards + repaso";
-
-            var session = new StudySession
-            {
-                Date = b.Date.Date,
-                Start = b.Start,
-                End = b.End,
-                SubjectId = chosen,
-                Type = type,
-                Strategy = strategy,
-                Notes = ""
-            };
-
-            _data.Plan.Add(session);
-
-            // Resta minutos pendientes (nunca baja de 0)
-            remaining[chosen] = Math.Max(0, remaining[chosen] - duration);
-        }
-
-        // 6) Refrescar binding + resumen
-        _blPlan.ResetBindings();
-        RefreshPlanSummary();
-
-        toolStripStatusLabel1.Text = "Planning generado.";
-    }*/
-
-    /* private void GeneratePlanV21()
-     {
-         _data.Plan.Clear();
-
-         var subjects = _data.Subjects.Where(x => x.Active).ToList();
-         if (subjects.Count == 0)
-         {
-             MessageBox.Show("No hay asignaturas activas.", "Planning", MessageBoxButtons.OK, MessageBoxIcon.Information);
-             return;
-         }
-
-         var blocks = _data.TimeBlocks
-             .OrderBy(b => b.Date.Date)
-             .ThenBy(b => b.Start)
-             .ToList();
-
-         if (blocks.Count == 0)
-         {
-             MessageBox.Show("No hay huecos de estudio. Añade huecos en 'Semana y huecos'.", "Planning",
-                 MessageBoxButtons.OK, MessageBoxIcon.Information);
-             return;
-         }
-
-         // Minutos restantes por tipo (lo importante del V2.1)
-         var deepRemaining = subjects.ToDictionary(s => s.Id, s => Math.Max(0, s.TargetDeepMinutes));
-         var lightRemaining = subjects.ToDictionary(s => s.Id, s => Math.Max(0, s.TargetLightMinutes));
-         var actRemaining = subjects.ToDictionary(s => s.Id, s => Math.Max(0, s.TargetActivityMinutes));
-
-         // Si todo está a 0, metemos mínimos para que el algoritmo no se quede “sin objetivo”
-         if (deepRemaining.Values.Sum() == 0) foreach (var id in deepRemaining.Keys.ToList()) deepRemaining[id] = 30;
-         if (lightRemaining.Values.Sum() == 0) foreach (var id in lightRemaining.Keys.ToList()) lightRemaining[id] = 30;
-
-         int plannedActBlocks = 0;
-         int maxActBlocks = 2; // regla simple: como mucho 2 huecos de “actividades” por semana/plan
-
-         foreach (var b in blocks)
-         {
-             int duration = b.DurationMinutes;
-
-             // Regla base: hueco largo -> Profundo, corto -> Ligero
-             var preferredType = duration >= 50 ? BlockType.Profundo : BlockType.Ligero;
-
-             // Regla Actividades (simple y controlada):
-             // - Si quedan actividades pendientes
-             // - y el hueco es razonable (>= 40 min)
-             // - y aún no hemos asignado demasiados bloques de actividades
-             bool shouldUseActivities =
-                 duration >= 40 &&
-                 plannedActBlocks < maxActBlocks &&
-                 actRemaining.Values.Sum() > 0;
-
-             Guid chosenSubjectId;
-             BlockType finalType;
-
-             if (shouldUseActivities)
-             {
-                 finalType = BlockType.Actividades;
-                 chosenSubjectId = PickSubjectByRemaining(actRemaining, subjects);
-                 plannedActBlocks++;
-                 actRemaining[chosenSubjectId] = Math.Max(0, actRemaining[chosenSubjectId] - duration);
-             }
-             else if (preferredType == BlockType.Profundo)
-             {
-                 finalType = BlockType.Profundo;
-                 chosenSubjectId = PickSubjectByRemaining(deepRemaining, subjects);
-                 deepRemaining[chosenSubjectId] = Math.Max(0, deepRemaining[chosenSubjectId] - duration);
-             }
-             else
-             {
-                 finalType = BlockType.Ligero;
-                 chosenSubjectId = PickSubjectByRemaining(lightRemaining, subjects);
-                 lightRemaining[chosenSubjectId] = Math.Max(0, lightRemaining[chosenSubjectId] - duration);
-             }
-
-             var strategy = finalType switch
-             {
-                 BlockType.Profundo => "Ejercicios + corrección (sin distracciones)",
-                 BlockType.Ligero => "Flashcards + repaso activo",
-                 BlockType.Actividades => "Actividad evaluable / entrega",
-                 _ => ""
-             };
-
-             _data.Plan.Add(new StudySession
-             {
-                 Date = b.Date.Date,
-                 Start = b.Start,
-                 End = b.End,
-                 SubjectId = chosenSubjectId,
-                 Type = finalType,
-                 Strategy = strategy,
-                 Notes = ""
-             });
-         }
-
-         _blPlan.ResetBindings();
-         RefreshPlanSummary();
-         toolStripStatusLabel1.Text = "Planning generado (V2.1).";
-     }/*
-
-     /* private Guid PickSubjectByRemaining(Dictionary<Guid, int> remainingBySubject, List<Subject> activeSubjects)
-      {
-          // Si por alguna razón todos están a 0, elige la primera activa
-          if (remainingBySubject.Values.All(v => v <= 0))
-              return activeSubjects[0].Id;
-
-          return remainingBySubject
-              .OrderByDescending(kv => kv.Value)
-              .Select(kv => kv.Key)
-              .First();
-      }*/
-
-    private void GeneratePlanV22()
-    {
-        _data.Plan.Clear();
-
-        var subjects = _data.Subjects.Where(x => x.Active).ToList();
-        if (subjects.Count == 0)
-        {
-            MessageBox.Show("No hay asignaturas activas.", "Planning", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        var blocks = _data.TimeBlocks
-            .OrderBy(b => b.Date.Date)
-            .ThenBy(b => b.Start)
-            .ToList();
-
-        if (blocks.Count == 0)
-        {
-            MessageBox.Show("No hay huecos de estudio. Añade huecos en 'Semana y huecos'.", "Planning",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        // Minutos restantes por tipo (igual que V2.1)
-        var deepRemaining = subjects.ToDictionary(s => s.Id, s => Math.Max(0, s.TargetDeepMinutes));
-        var lightRemaining = subjects.ToDictionary(s => s.Id, s => Math.Max(0, s.TargetLightMinutes));
-        var actRemaining = subjects.ToDictionary(s => s.Id, s => Math.Max(0, s.TargetActivityMinutes));
-
-        // Si están todos a 0, ponemos mínimos para no quedarnos sin reparto
-        if (deepRemaining.Values.Sum() == 0) foreach (var id in deepRemaining.Keys.ToList()) deepRemaining[id] = 30;
-        if (lightRemaining.Values.Sum() == 0) foreach (var id in lightRemaining.Keys.ToList()) lightRemaining[id] = 30;
-
-        int plannedActBlocks = 0;
-        int maxActBlocks = 2; // regla simple (ajustable)
-
-        foreach (var b in blocks)
-        {
-            int duration = b.DurationMinutes;
-
-            var preferredType = duration >= 50 ? BlockType.Profundo : BlockType.Ligero;
-
-            bool shouldUseActivities =
-                duration >= 40 &&
-                plannedActBlocks < maxActBlocks &&
-                actRemaining.Values.Sum() > 0;
-
-            Guid chosenSubjectId;
-            BlockType finalType;
-
-            if (shouldUseActivities)
-            {
-                finalType = BlockType.Actividades;
-                chosenSubjectId = PickSubjectByRemainingWeighted(actRemaining, subjects);
-                plannedActBlocks++;
-                actRemaining[chosenSubjectId] = Math.Max(0, actRemaining[chosenSubjectId] - duration);
-            }
-            else if (preferredType == BlockType.Profundo)
-            {
-                finalType = BlockType.Profundo;
-                chosenSubjectId = PickSubjectByRemainingWeighted(deepRemaining, subjects);
-                deepRemaining[chosenSubjectId] = Math.Max(0, deepRemaining[chosenSubjectId] - duration);
-            }
-            else
-            {
-                finalType = BlockType.Ligero;
-                chosenSubjectId = PickSubjectByRemainingWeighted(lightRemaining, subjects);
-                lightRemaining[chosenSubjectId] = Math.Max(0, lightRemaining[chosenSubjectId] - duration);
-            }
-
-            var strategy = finalType switch
-            {
-                BlockType.Profundo => "Ejercicios + corrección (sin distracciones)",
-                BlockType.Ligero => "Flashcards + repaso activo",
-                BlockType.Actividades => "Actividad evaluable / entrega",
-                _ => ""
-            };
-
-            var chosenSub = subjects.First(x => x.Id == chosenSubjectId);
-            _data.Plan.Add(new StudySession
-            {
-                Date = b.Date.Date,
-                Start = b.Start,
-                End = b.End,
-                SubjectId = chosenSubjectId,
-                Type = finalType,
-                Strategy = strategy,
-                Notes = "",
-
-                Topic = chosenSub.CurrentTopic,
-                Checkpoint = chosenSub.CurrentCheckpoint,
-                Completed = false
-            });
-        }
-
-        _blPlan.ResetBindings();
-        RefreshPlanSummary();
-        toolStripStatusLabel1.Text = "Planning generado (V2.2).";
-    }
-
-    private Guid PickSubjectByRemainingWeighted(
-     Dictionary<Guid, int> remainingBySubject,
-     List<Subject> activeSubjects)
-    {
-        // Si por alguna razón todos están a 0, elige la primera activa
-        if (remainingBySubject.Values.All(v => v <= 0))
-            return activeSubjects[0].Id;
-
-        // Elegimos por: remaining * (peso prioridad+examen)
-        // Esto mantiene el sentido de "minutos pendientes", pero empuja hacia lo urgente.
-        Guid bestId = activeSubjects[0].Id;
-        double bestScore = double.MinValue;
-
-        foreach (var sub in activeSubjects)
-        {
-            remainingBySubject.TryGetValue(sub.Id, out int rem);
-            if (rem <= 0) continue;
-
-            double score = rem * SubjectWeight(sub);
-
-            if (score > bestScore)
-            {
-                bestScore = score;
-                bestId = sub.Id;
-            }
-        }
-
-        // Si todos rem <= 0 (caso raro), fallback:
-        if (bestScore == double.MinValue)
-            return activeSubjects[0].Id;
-
-        return bestId;
-    }
-
-    private static double PriorityWeight(int priority)
-    {
-        // priority 1..5 -> peso 2.0..1.0 (aprox)
-        // 1 -> 2.0, 2 -> 1.75, 3 -> 1.5, 4 -> 1.25, 5 -> 1.0
-        priority = Math.Clamp(priority, 1, 5);
-        return 2.25 - (priority * 0.25);
-    }
-
-    private static double ExamWeight(DateTime? examDate)
-    {
-        if (examDate == null) return 1.0;
-
-        // Días hasta examen (si está en pasado, lo tratamos como 0 para “máxima urgencia”)
-        var days = (examDate.Value.Date - DateTime.Today).TotalDays;
-        if (days < 0) days = 0;
-
-        // Ventana de urgencia (supongamos 28 días): cuanto más cerca, más peso
-        const double window = 28.0;
-        var urgency = Math.Clamp((window - days) / window, 0.0, 1.0); // 0..1
-
-        // Peso final: 1.0 a 2.0
-        return 1.0 + urgency;
-    }
-
-    private static double SubjectWeight(Subject s)
-    {
-        return PriorityWeight(s.Priority) * ExamWeight(s.ExamDate);
-    }
-
     private void btnPlanGenerate_Click(object sender, EventArgs e)
     {
-        GeneratePlanV22();
-    }
+        // Instanciación del servicio inyector de lógica de negocio.
+        var generator = new PlanGenerator();
 
-    private static TimeSpan TS(int h, int m) => new TimeSpan(h, m, 0);
+        // Ejecución del algoritmo de optimización y distribución temporal.
+        var result = generator.GeneratePlan(_data);
 
-    private static List<(TimeSpan start, TimeSpan end)> TemplateForShift(WeekAutoBlocksDialog.ShiftType shift)
-    {
-        // Tus reglas:
-        // - Trabajas TARDE -> estudias 09:30-12:00 (porque a las 12:00 paseas al perrete)
-        // - Trabajas MAÑANA -> estudias 16:00-20:00
-        // - DÍA LIBRE -> eliges 0/1/2 profundos
-
-        return shift switch
+        // Actualización de la capa de presentación según el resultado del procesamiento.
+        if (!result.Success)
         {
-            // Trabajas 06-14 -> estudio 16-20 (2 profundos)
-            WeekAutoBlocksDialog.ShiftType.Manana => new List<(TimeSpan, TimeSpan)>
-        {
-            (TS(16,00), TS(18,00)), // Profundo
-            (TS(18,15), TS(20,00)), // Profundo
-        },
-
-            // Trabajas 14-22 -> estudio 09:30-12:00 (profundo + ligero corto)
-            WeekAutoBlocksDialog.ShiftType.Tarde => new List<(TimeSpan, TimeSpan)>
-        {
-            (TS(09,30), TS(11,30)), // Profundo
-            (TS(11,35), TS(12,00)), // Ligero (repaso rápido / flashcards)
-        },
-
-            // Libre: 0 huecos
-            WeekAutoBlocksDialog.ShiftType.Libre0 => new List<(TimeSpan, TimeSpan)>(),
-
-            // Libre: 1 profundo
-            WeekAutoBlocksDialog.ShiftType.Libre1 => new List<(TimeSpan, TimeSpan)>
-        {
-            (TS(10,00), TS(12,00)), // Profundo
-        },
-
-            // Libre: 2 profundos
-            WeekAutoBlocksDialog.ShiftType.Libre2 => new List<(TimeSpan, TimeSpan)>
-        {
-            (TS(10,00), TS(12,00)), // Profundo
-            (TS(16,00), TS(18,00)), // Profundo
-        },
-
-            _ => new List<(TimeSpan, TimeSpan)>()
-        };
-    }
-
-
-    private void GenerateWeekBlocks(DateTime monday, Dictionary<DayOfWeek, WeekAutoBlocksDialog.ShiftType> shifts, bool replaceWeek)
-    {
-        var weekStart = monday.Date;
-        var weekEndExclusive = weekStart.AddDays(7);
-
-        if (replaceWeek)
-        {
-            _data.TimeBlocks.RemoveAll(b => b.Date.Date >= weekStart && b.Date.Date < weekEndExclusive);
+            MessageBox.Show(result.Message, "Sistema de Planificación", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
         }
 
-        for (int i = 0; i < 7; i++)
-        {
-            var day = weekStart.AddDays(i);
-            var shift = shifts[day.DayOfWeek];
-
-            var slots = TemplateForShift(shift);
-
-            foreach (var (start, end) in slots)
-            {
-                var block = new TimeBlock
-                {
-                    Date = day.Date,
-                    Start = start,
-                    End = end
-                };
-
-                // Validación (evita solapes con lo que ya exista)
-                if (!IsBlockValid(block, editing: null, out _))
-                    continue;
-
-                _data.TimeBlocks.Add(block);
-            }
-        }
-
-        // Ordena por fecha/hora
-        _data.TimeBlocks.Sort((a, b) =>
-        {
-            int c = a.Date.Date.CompareTo(b.Date.Date);
-            if (c != 0) return c;
-            return a.Start.CompareTo(b.Start);
-        });
+        _blPlan.ResetBindings();
+        RefreshPlanSummary();
+        toolStripStatusLabel1.Text = result.Message;
     }
 
     private void btnPlanClear_Click(object sender, EventArgs e)
     {
         if (_data.Plan.Count == 0)
         {
-            toolStripStatusLabel1.Text = "No hay planning que eliminar.";
+            toolStripStatusLabel1.Text = "No existen registros de planificación activos.";
             return;
         }
 
         var ok = MessageBox.Show(
-            "Esto eliminará TODO el planning generado.\n\n¿Quieres continuar?",
-            "Confirmar eliminación",
+            "Esta acción purgará la totalidad de la planificación generada.\n\n¿Desea proceder?",
+            "Advertencia de purga de datos",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
 
@@ -1277,9 +917,8 @@ public partial class Form1 : Form
         _blPlan.ResetBindings();
         RefreshPlanSummary();
 
-        toolStripStatusLabel1.Text = "Planning eliminado.";
+        toolStripStatusLabel1.Text = "Registros de planificación purgados.";
         JsonStorage.Save(_jsonPath, _data);
-
     }
 
     private void btnPlanSessionSave_Click(object sender, EventArgs e)
@@ -1292,11 +931,11 @@ public partial class Form1 : Form
         s.Completed = chkPlanCompleted.Checked;
 
         _blPlan.ResetBindings();
-        toolStripStatusLabel1.Text = "Sesión actualizada.";
+        toolStripStatusLabel1.Text = "Estado de sesión actualizado exitosamente.";
     }
 
     private void chkPlanCompleted_CheckedChanged(object sender, EventArgs e)
     {
-
+        // Manejador de estado reservado para implementaciones futuras de telemetría o actualización en caliente.
     }
 }
