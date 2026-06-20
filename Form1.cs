@@ -938,4 +938,9 @@ public partial class Form1 : Form
     {
         // Manejador de estado reservado para implementaciones futuras de telemetría o actualización en caliente.
     }
+
+    private void lbTask_Click(object sender, EventArgs e)
+    {
+
+    }
 }

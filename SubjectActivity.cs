@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace StudyPlannerWinForms.Models; // Añadimos .Models y usamos el punto y coma
+namespace StudyPlannerWinForms.Models; // Añadimos .Models
 
 public class SubjectActivity
 {
