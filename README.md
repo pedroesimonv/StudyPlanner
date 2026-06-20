@@ -1,161 +1,69 @@
-# StudyPlannerWinForms
+# Study Planner (WinForms)
 
-> Desktop application developed in C# and WinForms to intelligently organize study sessions, assignments, subjects, and available time blocks.
+An Intelligent academic desktop planner developed in C# and Windows Forms, designed to optimize study sessions based on available time blocks, subject priorities, and upcoming deadlines.
 
----
-
-## Preview
-
-StudyPlannerWinForms is a personal productivity and academic planning application focused on helping students organize their study time realistically.
-
-The application generates study plans dynamically based on:
-
-* Available time blocks
-* Subject priorities
-* Exam dates
-* Assignments and pending activities
-* User availability and work shifts
-
-The project was built progressively as a real learning-oriented software development process, combining:
-
-* C#
-* WinForms
-* JSON local storage
-* Planning logic
-* UI/UX design principles
-* Git and GitHub version control
+> **Portfolio Note:** This repository is currently showing **Version 1.0 (Baseline)**. It represents the functional core of the application before the UI/UX refactoring and code optimization phase. 
 
 ---
 
-# Features
+## Application Preview (Version 1.0)
 
-## Current Features
+### 1. Main Dashboard & Subject Management
+This section handles the CRUD operations for academic subjects, setting priorities, and listing assignment due dates.
 
-* Subject management
-* Study time block management
-* Automatic study plan generation
-* Weekly planning system
-* Activity tracking per subject
-* Notes and progress support
-* Local JSON persistence
-* Responsive DataGridView formatting
-* Editable study priorities
-* Exam date support
-* Dynamic study recommendations
+![Subject Management Dashboard](assets/screenshots/v1-base/01-subjects-tab.png)
 
----
+### 2. Time Slots & Work Shifts Setup
+Where the user manually inputs available study slots or automatically generates them by selecting their work shift rotation.
 
-# Technologies Used
+![Time Blocks and Weekly Setup](assets/screenshots/v1-base/02-week-tab.png)
 
-| Technology         | Purpose                   |
-| ------------------ | ------------------------- |
-| C#                 | Main programming language |
-| WinForms           | Desktop UI framework      |
-| .NET               | Application runtime       |
-| JSON               | Local data persistence    |
-| Git                | Version control           |
-| GitHub             | Repository hosting        |
-| Visual Studio 2022 | Development environment   |
+### 3. Dynamic Planning & Performance Summary
+The core engine output. It distributes study sessions and displays a weekly analytics summary comparing target hours vs. actual allocated time.
 
----
----
-
-# Application Goals
-
-The goal of this project is not only to create a study planner, but also to:
-
-* Practice real software architecture concepts
-* Improve C# and WinForms development skills
-* Simulate a real desktop software workflow
-* Build a portfolio-ready project
-* Develop a practical tool for academic productivity
+![Generated Study Plan & Summary](assets/screenshots/v1-base/03-planning-tab.png)
 
 ---
 
-# Current Development Status
+## Key Features (Current V1.0)
 
-## Implemented
-
-* Core application architecture
-* Subject CRUD system
-* Time block CRUD system
-* Planning generation logic
-* Validation systems
-* Local persistence with JSON
-* Git repository setup
-* Basic UI organization
-
-## In Progress
-
-* Weekly automatic schedule generator
-* Activity dashboard system
-* Quick-start memo panel
-* Improved planning algorithms
-* Enhanced visual design
-
-## Planned
-
-* Better UI/UX styling
-* Custom application icon
-* Statistics dashboard
-* Productivity tracking
-* Notifications and reminders
-* SQLite support
-* Export/import tools
+* **Subject Lifecycle (CRUD):** Custom priority scales, exam tracking, and automated focus strategy recommendations.
+* **Smart Time-Blocking:** Custom validation rules to prevent geometric overlaps or negative time ranges.
+* **Data-Driven Scheduling:** Core planning algorithm that matches user free time with subject weight and urgency.
+* **Local Persistence:** Full serialization and deserialization using native `System.Text.Json`.
+* **Asynchronous-Ready Layouts:** Decoupled UI logic leveraging bi-directional `BindingSource` and `BindingList`.
 
 ---
 
-# Screenshots
+## Technologies & Tools
 
-> Screenshots will be added in future versions.
-
----
-
-# Installation
-
-## Requirements
-
-* Windows 10/11
-* .NET Runtime
+| Technology / Tool | Purpose |
+| :--- | :--- |
+| **C# (.NET)** | Main programming language & business logic. |
+| **WinForms** | Desktop User Interface framework. |
+| **System.Text.Json** | Local flat-file data persistence. |
+| **LINQ** | Declarative queries for time calculation and filtering. |
+| **Git / GitHub** | Version control and branch management. |
+| **Visual Studio 2022** | Primary Integrated Development Environment (IDE). |
 
 ---
 
-# Learning Objectives
+## Academic & Portfolio Goals
 
-This project was also created as a personal educational challenge to improve:
-
-* Object-oriented programming
-* Desktop application architecture
-* Data management
-* UI structuring
-* Productivity system design
-* Git workflow
-* Real-world problem solving
+This project represents a real-world bridge between classroom theory and production-ready practices. It showcases:
+1. **Advanced Data Binding:** Moving away from manual grid painting to reactive, data-bound UI components.
+2. **Algorithmic Optimization:** Translating time constraints into a structured mathematical distribution without manual loops.
+3. **Local Architecture:** Implementation of POO models and controllers mimicking an N-Tier architecture locally.
 
 ---
 
-# Future Improvements
+## Quick Start / Installation
 
-* Smarter planning algorithm
-* Drag & drop planning
-* Calendar integration
-* Activity completion analytics
-* Better visual hierarchy
-* Theme support
-* Cloud synchronization
+### Prerequisites
+* Windows 10 / 11
+* .NET SDK 6.0 or higher (or .NET Runtime)
 
----
-
-# Author
-
-Pedro Simón
-
-Software Development Student (DAM)
-
----
-
-# License
-
-This project is currently intended for educational and portfolio purposes.
-
-Future licensing may be added later.
+### Running it locally
+1. Clone the repository:
+   ```bash
+   git clone [https://github.com/tu-usuario/StudyPlannerWinForms.git](https://github.com/tu-usuario/StudyPlannerWinForms.git)
