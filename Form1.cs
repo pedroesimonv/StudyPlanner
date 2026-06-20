@@ -25,9 +25,8 @@ public partial class Form1 : Form
     private AppData _data = new();
 
     private readonly string _jsonPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-        "StudyPlanner",
-        "data.json");
+    Application.StartupPath,
+    "data.json");
 
     // ========================================================================
     // CONSTRUCTOR
@@ -316,6 +315,7 @@ public partial class Form1 : Form
             _data.Subjects.Add(s);
             _blSubjects.ResetBindings();
             _editingSubjectId = s.Id;
+            JsonStorage.Save(_jsonPath, _data);
 
             toolStripStatusLabel1.Text = "Asignatura creada exitosamente.";
         }
@@ -335,6 +335,7 @@ public partial class Form1 : Form
             existing.Activities = ReadActivitiesFromEditor();
 
             _blSubjects.ResetBindings();
+            JsonStorage.Save(_jsonPath, _data);
             toolStripStatusLabel1.Text = "Asignatura actualizada exitosamente.";
         }
     }
@@ -360,6 +361,7 @@ public partial class Form1 : Form
         _blSubjects.ResetBindings();
         ClearSubjectEditor();
         _editingSubjectId = null;
+        JsonStorage.Save(_jsonPath, _data);
 
         toolStripStatusLabel1.Text = "Asignatura eliminada del sistema.";
     }
@@ -937,5 +939,9 @@ public partial class Form1 : Form
     private void chkPlanCompleted_CheckedChanged(object sender, EventArgs e)
     {
         // Manejador de estado reservado para implementaciones futuras de telemetría o actualización en caliente.
+    }
+
+    private void lbTask_Click(object sender, EventArgs e)
+    {
     }
 }
