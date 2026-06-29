@@ -62,18 +62,33 @@ public partial class Form1 : Form
     // ========================================================================
     private void AutoLoadOnStartup()
     {
-        _data = JsonStorage.Load(_jsonPath);
+        try
+        {
+            _data = JsonStorage.Load(_jsonPath);
+            toolStripStatusLabel1.Text = "Datos cargados automáticamente.";
+        }
+        catch (Exception ex)
+        {
+            _data = new AppData();
+
+            MessageBox.Show(
+                $"El archivo de datos no se pudo cargar porque está dañado o tiene un formato incorrecto.\n\nSe ha inicializado un espacio de trabajo vacío.\n\nDetalles: {ex.Message}",
+                "Aviso del Sistema",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            toolStripStatusLabel1.Text = "Error al cargar el JSON. Datos reestablecidos.";
+        }
 
         BindSubjects();
         BindBlocks();
         BindPlan();
         RefreshPlanSummary();
-
-        toolStripStatusLabel1.Text = "Datos cargados automáticamente.";
     }
 
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
     {
+        CreateLocalBackup();
         JsonStorage.Save(_jsonPath, _data);
     }
 
@@ -89,14 +104,28 @@ public partial class Form1 : Form
 
     private void mnuLoad_Click(object sender, EventArgs e)
     {
-        _data = JsonStorage.Load(_jsonPath);
+        try
+        {
+            _data = JsonStorage.Load(_jsonPath);
+            toolStripStatusLabel1.Text = "Datos cargados desde JSON.";
+        }
+        catch (Exception ex)
+        {
+            _data = new AppData();
+
+            MessageBox.Show(
+                $"Error al cargar el archivo seleccionado.\n\nDetalles: {ex.Message}",
+                "Error de Carga",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+
+            toolStripStatusLabel1.Text = "Fallo en la carga manual del archivo.";
+        }
 
         BindSubjects();
         BindBlocks();
         BindPlan();
         RefreshPlanSummary();
-
-        toolStripStatusLabel1.Text = "Datos cargados desde JSON.";
     }
 
     // ========================================================================
@@ -205,6 +234,7 @@ public partial class Form1 : Form
         txtSubTopic.Clear();
         txtSubCheckpoint.Clear();
 
+        CreateLocalBackup();
         ClearActivitiesEditor();
     }
 
@@ -310,6 +340,7 @@ public partial class Form1 : Form
 
         //Actualización de la interfaz y persistencia en el JSON
         _blSubjects.ResetBindings();
+        CreateLocalBackup();
         JsonStorage.Save(_jsonPath, _data);
         toolStripStatusLabel1.Text = statusMsg;
     }
@@ -336,6 +367,7 @@ public partial class Form1 : Form
             _blSubjects.ResetBindings();
             ClearSubjectEditor();
             _editingSubjectId = null;
+            CreateLocalBackup();
             JsonStorage.Save(_jsonPath, _data);
         }
 
@@ -693,6 +725,22 @@ public partial class Form1 : Form
 
         _blPlan.ResetBindings();
         toolStripStatusLabel1.Text = "Estado de sesión actualizado exitosamente.";
+    }
+
+    private void CreateLocalBackup()
+    {
+        try
+        {
+            if (File.Exists(_jsonPath))
+            {
+                string backupPath = _jsonPath + ".bak";
+                File.Copy(_jsonPath, backupPath, overwrite: true);
+            }
+        }
+        catch
+        {
+            // Fallo silencioso para que un error en el backup no congele la aplicación
+        }
     }
 
     private void chkPlanCompleted_CheckedChanged(object sender, EventArgs e)
