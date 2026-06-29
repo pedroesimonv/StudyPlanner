@@ -137,12 +137,6 @@
             gbAvisos = new GroupBox();
             lblWarnings = new Label();
             dgvPlan = new DataGridView();
-            pnlPlanTop = new Panel();
-            btnPlanClear = new Button();
-            btnPlanCopy = new Button();
-            btnPlanExportCsv = new Button();
-            btnPlanRegenerate = new Button();
-            btnPlanGenerate = new Button();
             colPlanDate = new DataGridViewTextBoxColumn();
             colPlanStart = new DataGridViewTextBoxColumn();
             colPlanEnd = new DataGridViewTextBoxColumn();
@@ -150,6 +144,12 @@
             colPlanType = new DataGridViewTextBoxColumn();
             colPlanStrategy = new DataGridViewTextBoxColumn();
             colPlanNotes = new DataGridViewTextBoxColumn();
+            pnlPlanTop = new Panel();
+            btnPlanClear = new Button();
+            btnPlanCopy = new Button();
+            btnPlanExportCsv = new Button();
+            btnPlanRegenerate = new Button();
+            btnPlanGenerate = new Button();
             menuStrip1.SuspendLayout();
             statusMain.SuspendLayout();
             tabMain.SuspendLayout();
@@ -1194,6 +1194,49 @@
             dgvPlan.Size = new Size(1403, 698);
             dgvPlan.TabIndex = 1;
             // 
+            // colPlanDate
+            // 
+            colPlanDate.FillWeight = 159.898483F;
+            colPlanDate.HeaderText = "Fecha";
+            colPlanDate.MinimumWidth = 3;
+            colPlanDate.Name = "colPlanDate";
+            // 
+            // colPlanStart
+            // 
+            colPlanStart.FillWeight = 78.35025F;
+            colPlanStart.HeaderText = "Inicio";
+            colPlanStart.Name = "colPlanStart";
+            // 
+            // colPlanEnd
+            // 
+            colPlanEnd.FillWeight = 78.35025F;
+            colPlanEnd.HeaderText = "Fin";
+            colPlanEnd.Name = "colPlanEnd";
+            // 
+            // colPlanSubject
+            // 
+            colPlanSubject.FillWeight = 78.35025F;
+            colPlanSubject.HeaderText = "Asignatura";
+            colPlanSubject.Name = "colPlanSubject";
+            // 
+            // colPlanType
+            // 
+            colPlanType.FillWeight = 78.35025F;
+            colPlanType.HeaderText = "Tipo";
+            colPlanType.Name = "colPlanType";
+            // 
+            // colPlanStrategy
+            // 
+            colPlanStrategy.FillWeight = 78.35025F;
+            colPlanStrategy.HeaderText = "Estrategia";
+            colPlanStrategy.Name = "colPlanStrategy";
+            // 
+            // colPlanNotes
+            // 
+            colPlanNotes.FillWeight = 78.35025F;
+            colPlanNotes.HeaderText = "Notas";
+            colPlanNotes.Name = "colPlanNotes";
+            // 
             // pnlPlanTop
             // 
             pnlPlanTop.Controls.Add(btnPlanClear);
@@ -1258,49 +1301,6 @@
             btnPlanGenerate.Text = "Generar planning";
             btnPlanGenerate.UseVisualStyleBackColor = true;
             btnPlanGenerate.Click += btnPlanGenerate_Click;
-            // 
-            // colPlanDate
-            // 
-            colPlanDate.FillWeight = 159.898483F;
-            colPlanDate.HeaderText = "Fecha";
-            colPlanDate.MinimumWidth = 3;
-            colPlanDate.Name = "colPlanDate";
-            // 
-            // colPlanStart
-            // 
-            colPlanStart.FillWeight = 78.35025F;
-            colPlanStart.HeaderText = "Inicio";
-            colPlanStart.Name = "colPlanStart";
-            // 
-            // colPlanEnd
-            // 
-            colPlanEnd.FillWeight = 78.35025F;
-            colPlanEnd.HeaderText = "Fin";
-            colPlanEnd.Name = "colPlanEnd";
-            // 
-            // colPlanSubject
-            // 
-            colPlanSubject.FillWeight = 78.35025F;
-            colPlanSubject.HeaderText = "Asignatura";
-            colPlanSubject.Name = "colPlanSubject";
-            // 
-            // colPlanType
-            // 
-            colPlanType.FillWeight = 78.35025F;
-            colPlanType.HeaderText = "Tipo";
-            colPlanType.Name = "colPlanType";
-            // 
-            // colPlanStrategy
-            // 
-            colPlanStrategy.FillWeight = 78.35025F;
-            colPlanStrategy.HeaderText = "Estrategia";
-            colPlanStrategy.Name = "colPlanStrategy";
-            // 
-            // colPlanNotes
-            // 
-            colPlanNotes.FillWeight = 78.35025F;
-            colPlanNotes.HeaderText = "Notas";
-            colPlanNotes.Name = "colPlanNotes";
             // 
             // Form1
             // 

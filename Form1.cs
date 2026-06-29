@@ -11,16 +11,17 @@ public partial class Form1 : Form
     // ========================================================================
     private readonly BindingSource _bsSubjects = new();
 
+    private readonly TimeBlockService _timeBlockService = new();
+    private readonly PlanSummaryService _planSummaryService = new();
+    private readonly SubjectService _subjectService = new();
+
     private readonly BindingSource _bsBlocks = new();
     private readonly BindingSource _bsPlan = new();
-
     private BindingList<Subject> _blSubjects = new();
     private BindingList<TimeBlock> _blBlocks = new();
     private BindingList<StudySession> _blPlan = new();
-
     private readonly TextBox[] _actTitleBoxes;
     private readonly DateTimePicker[] _actDatePickers;
-
     private Guid? _editingSubjectId = null;
     private AppData _data = new();
 
@@ -49,7 +50,6 @@ public partial class Form1 : Form
         BindBlocks();
         SetupPlanGrid();
         BindPlan();
-
         AutoLoadOnStartup();
 
         // Suscripción a eventos del ciclo de vida del formulario y controles.
@@ -62,18 +62,33 @@ public partial class Form1 : Form
     // ========================================================================
     private void AutoLoadOnStartup()
     {
-        _data = JsonStorage.Load(_jsonPath);
+        try
+        {
+            _data = JsonStorage.Load(_jsonPath);
+            toolStripStatusLabel1.Text = "Datos cargados automáticamente.";
+        }
+        catch (Exception ex)
+        {
+            _data = new AppData();
+
+            MessageBox.Show(
+                $"El archivo de datos no se pudo cargar porque está dañado o tiene un formato incorrecto.\n\nSe ha inicializado un espacio de trabajo vacío.\n\nDetalles: {ex.Message}",
+                "Aviso del Sistema",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            toolStripStatusLabel1.Text = "Error al cargar el JSON. Datos reestablecidos.";
+        }
 
         BindSubjects();
         BindBlocks();
         BindPlan();
         RefreshPlanSummary();
-
-        toolStripStatusLabel1.Text = "Datos cargados automáticamente.";
     }
 
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
     {
+        CreateLocalBackup();
         JsonStorage.Save(_jsonPath, _data);
     }
 
@@ -89,14 +104,28 @@ public partial class Form1 : Form
 
     private void mnuLoad_Click(object sender, EventArgs e)
     {
-        _data = JsonStorage.Load(_jsonPath);
+        try
+        {
+            _data = JsonStorage.Load(_jsonPath);
+            toolStripStatusLabel1.Text = "Datos cargados desde JSON.";
+        }
+        catch (Exception ex)
+        {
+            _data = new AppData();
+
+            MessageBox.Show(
+                $"Error al cargar el archivo seleccionado.\n\nDetalles: {ex.Message}",
+                "Error de Carga",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+
+            toolStripStatusLabel1.Text = "Fallo en la carga manual del archivo.";
+        }
 
         BindSubjects();
         BindBlocks();
         BindPlan();
         RefreshPlanSummary();
-
-        toolStripStatusLabel1.Text = "Datos cargados desde JSON.";
     }
 
     // ========================================================================
@@ -205,6 +234,7 @@ public partial class Form1 : Form
         txtSubTopic.Clear();
         txtSubCheckpoint.Clear();
 
+        CreateLocalBackup();
         ClearActivitiesEditor();
     }
 
@@ -276,7 +306,7 @@ public partial class Form1 : Form
 
     private void btnSubSave_Click(object sender, EventArgs e)
     {
-        // Verificación de integridad de los datos de entrada.
+        //Validaciones de UI
         var name = txtSubName.Text.Trim();
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -289,55 +319,30 @@ public partial class Form1 : Form
             return;
         }
 
-        Subject? existing = null;
-        if (_editingSubjectId.HasValue)
-            existing = _data.Subjects.FirstOrDefault(x => x.Id == _editingSubjectId.Value);
-
-        if (existing == null)
+        //Empaquetamos los datos del formulario en un objeto temporal
+        var tempSubject = new Subject
         {
-            // Instanciación de una nueva entidad Subject.
-            var s = new Subject
-            {
-                Id = Guid.NewGuid(),
-                Name = name,
-                Course = cmbSubCourse.SelectedItem.ToString()!,
-                Priority = (int)numSubPriority.Value,
-                ExamDate = chkHasExam.Checked ? dtpSubExam.Value.Date : (DateTime?)null,
-                TargetDeepMinutes = (int)numTargetDeep.Value,
-                TargetLightMinutes = (int)numTargetLight.Value,
-                TargetActivityMinutes = (int)numTargetAct.Value,
-                Active = chkSubActive.Checked,
-                CurrentTopic = txtSubTopic.Text.Trim(),
-                CurrentCheckpoint = txtSubCheckpoint.Text.Trim(),
-                Activities = ReadActivitiesFromEditor(),
-            };
+            Name = name,
+            Course = cmbSubCourse.SelectedItem.ToString()!,
+            Priority = (int)numSubPriority.Value,
+            ExamDate = chkHasExam.Checked ? dtpSubExam.Value.Date : null,
+            TargetDeepMinutes = (int)numTargetDeep.Value,
+            TargetLightMinutes = (int)numTargetLight.Value,
+            TargetActivityMinutes = (int)numTargetAct.Value,
+            Active = chkSubActive.Checked,
+            CurrentTopic = txtSubTopic.Text.Trim(),
+            CurrentCheckpoint = txtSubCheckpoint.Text.Trim(),
+            Activities = ReadActivitiesFromEditor()
+        };
 
-            _data.Subjects.Add(s);
-            _blSubjects.ResetBindings();
-            _editingSubjectId = s.Id;
-            JsonStorage.Save(_jsonPath, _data);
+        //Delegación del guardado al servicio
+        _editingSubjectId = _subjectService.SaveSubject(_data, _editingSubjectId, tempSubject, out var statusMsg);
 
-            toolStripStatusLabel1.Text = "Asignatura creada exitosamente.";
-        }
-        else
-        {
-            // Modificación de la entidad Subject existente.
-            existing.Name = name;
-            existing.Course = cmbSubCourse.SelectedItem.ToString()!;
-            existing.Priority = (int)numSubPriority.Value;
-            existing.ExamDate = chkHasExam.Checked ? dtpSubExam.Value.Date : (DateTime?)null;
-            existing.TargetDeepMinutes = (int)numTargetDeep.Value;
-            existing.TargetLightMinutes = (int)numTargetLight.Value;
-            existing.TargetActivityMinutes = (int)numTargetAct.Value;
-            existing.Active = chkSubActive.Checked;
-            existing.CurrentTopic = txtSubTopic.Text.Trim();
-            existing.CurrentCheckpoint = txtSubCheckpoint.Text.Trim();
-            existing.Activities = ReadActivitiesFromEditor();
-
-            _blSubjects.ResetBindings();
-            JsonStorage.Save(_jsonPath, _data);
-            toolStripStatusLabel1.Text = "Asignatura actualizada exitosamente.";
-        }
+        //Actualización de la interfaz y persistencia en el JSON
+        _blSubjects.ResetBindings();
+        CreateLocalBackup();
+        JsonStorage.Save(_jsonPath, _data);
+        toolStripStatusLabel1.Text = statusMsg;
     }
 
     private void btnSubDelete_Click(object sender, EventArgs e)
@@ -357,13 +362,16 @@ public partial class Form1 : Form
 
         if (ok != DialogResult.Yes) return;
 
-        _data.Subjects.Remove(s);
-        _blSubjects.ResetBindings();
-        ClearSubjectEditor();
-        _editingSubjectId = null;
-        JsonStorage.Save(_jsonPath, _data);
+        if (_subjectService.DeleteSubject(_data, s, out var statusMsg))
+        {
+            _blSubjects.ResetBindings();
+            ClearSubjectEditor();
+            _editingSubjectId = null;
+            CreateLocalBackup();
+            JsonStorage.Save(_jsonPath, _data);
+        }
 
-        toolStripStatusLabel1.Text = "Asignatura eliminada del sistema.";
+        toolStripStatusLabel1.Text = statusMsg;
     }
 
     // ========================================================================
@@ -439,39 +447,6 @@ public partial class Form1 : Form
         return dgvBlocks.CurrentRow?.DataBoundItem as TimeBlock;
     }
 
-    private bool IsBlockValid(TimeBlock b, TimeBlock? editing, out string message)
-    {
-        message = "";
-
-        if (b.End <= b.Start)
-        {
-            message = "Inconsistencia temporal: La hora de finalización debe ser posterior a la de inicio.";
-            return false;
-        }
-        if (b.DurationMinutes < 15)
-        {
-            message = "La duración mínima permitida para un bloque de estudio es de 15 minutos.";
-            return false;
-        }
-
-        // Algoritmo de validación de solapamiento temporal.
-        foreach (var other in _data.TimeBlocks)
-        {
-            if (editing != null && ReferenceEquals(other, editing)) continue;
-
-            if (other.Date.Date != b.Date.Date) continue;
-
-            bool overlap = b.Start < other.End && other.Start < b.End;
-            if (overlap)
-            {
-                message = "Se ha detectado un conflicto: Este bloque se solapa con otro registro existente en la misma fecha.";
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private void btnWeekAutoBlocks_Click(object sender, EventArgs e)
     {
         using var dlg = new WeekAutoBlocksDialog();
@@ -483,7 +458,7 @@ public partial class Form1 : Form
         var monday = dlg.GetWeekMonday();
         var shifts = dlg.GetShifts();
 
-        GenerateWeekBlocks(monday, shifts, dlg.ReplaceWeekBlocks);
+        _timeBlockService.GenerateWeekBlocks(_data, monday, shifts, dlg.ReplaceWeekBlocks);
 
         _blBlocks.ResetBindings();
         toolStripStatusLabel1.Text = "Generación de bloques semanales completada.";
@@ -499,7 +474,7 @@ public partial class Form1 : Form
 
         var block = dlg.GetBlock();
 
-        if (!IsBlockValid(block, editing: null, out var msg))
+        if (!_timeBlockService.IsBlockValid(block, editing: null, _data.TimeBlocks, out var msg))
         {
             MessageBox.Show(msg, "Error de validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
@@ -528,7 +503,7 @@ public partial class Form1 : Form
 
         var edited = dlg.GetBlock();
 
-        if (!IsBlockValid(edited, editing: selected, out var msg))
+        if (!_timeBlockService.IsBlockValid(edited, editing: selected, _data.TimeBlocks, out var msg))
         {
             MessageBox.Show(msg, "Error de validación", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
@@ -539,7 +514,7 @@ public partial class Form1 : Form
         selected.End = edited.End;
 
         _blBlocks.ResetBindings();
-        toolStripStatusLabel1.Text = "Bloque de tiempo modificado correctamente.";
+        toolStripStatusLabel1.Text = "Bloque de tiempo modified correctamente.";
     }
 
     private void btnBlockRemove_Click(object sender, EventArgs e)
@@ -563,82 +538,6 @@ public partial class Form1 : Form
         _blBlocks.ResetBindings();
 
         toolStripStatusLabel1.Text = "Bloque de tiempo eliminado.";
-    }
-
-    private static TimeSpan TS(int h, int m) => new TimeSpan(h, m, 0);
-
-    private static List<(TimeSpan start, TimeSpan end)> TemplateForShift(WeekAutoBlocksDialog.ShiftType shift)
-    {
-        // Diccionario de reglas de negocio que define los periodos de estudio recomendados
-        // según el patrón de turnos laborales del usuario.
-        return shift switch
-        {
-            WeekAutoBlocksDialog.ShiftType.Manana => new List<(TimeSpan, TimeSpan)>
-            {
-                (TS(16,00), TS(18,00)),
-                (TS(18,15), TS(20,00)),
-            },
-            WeekAutoBlocksDialog.ShiftType.Tarde => new List<(TimeSpan, TimeSpan)>
-            {
-                (TS(09,30), TS(11,30)),
-                (TS(11,35), TS(12,00)),
-            },
-            WeekAutoBlocksDialog.ShiftType.Libre0 => new List<(TimeSpan, TimeSpan)>(),
-            WeekAutoBlocksDialog.ShiftType.Libre1 => new List<(TimeSpan, TimeSpan)>
-            {
-                (TS(10,00), TS(12,00)),
-            },
-            WeekAutoBlocksDialog.ShiftType.Libre2 => new List<(TimeSpan, TimeSpan)>
-            {
-                (TS(10,00), TS(12,00)),
-                (TS(16,00), TS(18,00)),
-            },
-            _ => new List<(TimeSpan, TimeSpan)>()
-        };
-    }
-
-    private void GenerateWeekBlocks(DateTime monday, Dictionary<DayOfWeek, WeekAutoBlocksDialog.ShiftType> shifts, bool replaceWeek)
-    {
-        var weekStart = monday.Date;
-        var weekEndExclusive = weekStart.AddDays(7);
-
-        if (replaceWeek)
-        {
-            // Ejecución de borrado en cascada para la semana seleccionada.
-            _data.TimeBlocks.RemoveAll(b => b.Date.Date >= weekStart && b.Date.Date < weekEndExclusive);
-        }
-
-        for (int i = 0; i < 7; i++)
-        {
-            var day = weekStart.AddDays(i);
-            var shift = shifts[day.DayOfWeek];
-
-            var slots = TemplateForShift(shift);
-
-            foreach (var (start, end) in slots)
-            {
-                var block = new TimeBlock
-                {
-                    Date = day.Date,
-                    Start = start,
-                    End = end
-                };
-
-                // Omite inserciones que violen la restricción de solapamiento temporal.
-                if (!IsBlockValid(block, editing: null, out _))
-                    continue;
-
-                _data.TimeBlocks.Add(block);
-            }
-        }
-
-        // Ordenamiento cronológico de la colección.
-        _data.TimeBlocks.Sort((a, b) =>
-        {
-            int c = a.Date.Date.CompareTo(b.Date.Date);
-            if (c != 0) return c;
-            return a.Start.CompareTo(b.Start);
-        });
     }
 
     // ========================================================================
@@ -697,132 +596,24 @@ public partial class Form1 : Form
         lvSummary.Columns.Add("Planificado (D/L/A)", 190);
     }
 
-    private static string FormatDla(int deep, int light, int act)
-    {
-        int total = deep + light + act;
-        return $"D:{deep} L:{light} A:{act} (T:{total})";
-    }
-
-    private static string FormatDue(DateTime due)
-    {
-        return due.ToString("dd/MM/yyyy");
-    }
-
     private void RefreshPlanSummary()
     {
         lvSummary.Items.Clear();
         lblWarnings.Text = "";
 
-        var activeSubjects = _data.Subjects.Where(s => s.Active).ToList();
+        var summary = _planSummaryService.CalculateSummary(_data);
 
-        // Agrupación mediante LINQ y proyección de datos para calcular los totales de planificación.
-        var minutesBySubject = _data.Plan
-            .GroupBy(p => p.SubjectId)
-            .ToDictionary(
-                g => g.Key,
-                g => new
-                {
-                    Deep = g.Where(x => x.Type == BlockType.Profundo).Sum(x => x.DurationMinutes),
-                    Light = g.Where(x => x.Type == BlockType.Ligero).Sum(x => x.DurationMinutes),
-                    Act = g.Where(x => x.Type == BlockType.Actividades).Sum(x => x.DurationMinutes),
-                });
-
-        var warnings = new List<string>();
-
-        // Evaluación de discrepancias entre objetivos establecidos y minutos planificados.
-        foreach (var s in activeSubjects)
+        foreach (var row in summary.Rows)
         {
-            minutesBySubject.TryGetValue(s.Id, out var planned);
-
-            int pDeep = planned?.Deep ?? 0;
-            int pLight = planned?.Light ?? 0;
-            int pAct = planned?.Act ?? 0;
-
-            int tDeep = s.TargetDeepMinutes;
-            int tLight = s.TargetLightMinutes;
-            int tAct = s.TargetActivityMinutes;
-
-            var item = new ListViewItem(s.Name);
-            item.SubItems.Add(FormatDla(tDeep, tLight, tAct));
-            item.SubItems.Add(FormatDla(pDeep, pLight, pAct));
+            var item = new ListViewItem(row.SubjectName);
+            item.SubItems.Add(row.TargetDla);
+            item.SubItems.Add(row.PlannedDla);
             lvSummary.Items.Add(item);
-
-            if (tDeep > 0 && pDeep < tDeep)
-                warnings.Add($"Faltan {tDeep - pDeep} min PROFUNDO en {s.Name}");
-
-            if (tLight > 0 && pLight < tLight)
-                warnings.Add($"Faltan {tLight - pLight} min LIGERO en {s.Name}");
-
-            if (tAct > 0 && pAct < tAct)
-                warnings.Add($"Faltan {tAct - pAct} min ACTIVIDADES en {s.Name}");
         }
 
-        // Análisis predictivo de entregas inminentes (ventana de 7 días).
-        var today = DateTime.Today;
-        var limit = today.AddDays(7);
-
-        var upcoming = _data.Subjects
-            .Where(s => s.Active)
-            .SelectMany(s => s.Activities.Select(a => new { Subject = s, Act = a }))
-            .Where(x => !string.IsNullOrWhiteSpace(x.Act.Title))
-            .Where(x => x.Act.DueDate.HasValue)
-            .Select(x => new
-            {
-                x.Subject.Name,
-                Title = x.Act.Title.Trim(),
-                Due = x.Act.DueDate!.Value.Date
-            })
-            .Where(x => x.Due >= today && x.Due <= limit)
-            .OrderBy(x => x.Due)
-            .ThenBy(x => x.Name)
-            .ToList();
-
-        if (upcoming.Count > 0)
-        {
-            warnings.Add("");
-            warnings.Add("📌 Entregas próximas (7 días):");
-
-            foreach (var u in upcoming)
-            {
-                var daysLeft = (u.Due - today).Days;
-                var dText = daysLeft == 0 ? "HOY" : $"en {daysLeft} día(s)";
-                warnings.Add($"- {u.Name}: {u.Title} → {FormatDue(u.Due)} ({dText})");
-            }
-        }
-
-        // Detección retrospectiva de entregas vencidas.
-        var overdue = _data.Subjects
-            .Where(s => s.Active)
-            .SelectMany(s => s.Activities.Select(a => new { Subject = s, Act = a }))
-            .Where(x => !string.IsNullOrWhiteSpace(x.Act.Title))
-            .Where(x => x.Act.DueDate.HasValue)
-            .Select(x => new
-            {
-                x.Subject.Name,
-                Title = x.Act.Title.Trim(),
-                Due = x.Act.DueDate!.Value.Date
-            })
-            .Where(x => x.Due < today)
-            .OrderByDescending(x => x.Due)
-            .ThenBy(x => x.Name)
-            .ToList();
-
-        if (overdue.Count > 0)
-        {
-            warnings.Add("");
-            warnings.Add("⚠️ Entregas vencidas:");
-
-            foreach (var o in overdue)
-            {
-                var daysLate = (today - o.Due).Days;
-                warnings.Add($"- {o.Name}: {o.Title} → {FormatDue(o.Due)} (hace {daysLate} día(s))");
-            }
-        }
-
-        if (_data.Plan.Count == 0)
-            warnings.Insert(0, "El sistema no contiene registros de planificación generados.");
-
-        lblWarnings.Text = warnings.Count == 0 ? "Estado óptimo: Sin avisos reportados." : string.Join(Environment.NewLine, warnings);
+        lblWarnings.Text = summary.Warnings.Count == 0
+            ? "Estado óptimo: Sin avisos reportados."
+            : string.Join(Environment.NewLine, summary.Warnings);
     }
 
     private StudySession? GetSelectedSession() => dgvPlan.CurrentRow?.DataBoundItem as StudySession;
@@ -934,6 +725,22 @@ public partial class Form1 : Form
 
         _blPlan.ResetBindings();
         toolStripStatusLabel1.Text = "Estado de sesión actualizado exitosamente.";
+    }
+
+    private void CreateLocalBackup()
+    {
+        try
+        {
+            if (File.Exists(_jsonPath))
+            {
+                string backupPath = _jsonPath + ".bak";
+                File.Copy(_jsonPath, backupPath, overwrite: true);
+            }
+        }
+        catch
+        {
+            // Fallo silencioso para que un error en el backup no congele la aplicación
+        }
     }
 
     private void chkPlanCompleted_CheckedChanged(object sender, EventArgs e)
